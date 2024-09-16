@@ -1,0 +1,12 @@
+#recv state
+RECV_IDLE       = 0
+RECV_START      = 1
+RECV_ESC        = 2
+
+#SLIP TYPE
+SLIP_START = 0xAB
+SLIP_END   = 0xBC
+SLIP_ESC   = 0xCD
+SLIP_ESC_START = SLIP_START + 1
+SLIP_ESC_END   = SLIP_END   + 1
+SLIP_ESC_ESC   = SLIP_ESC   + 1
