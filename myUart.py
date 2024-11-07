@@ -5,6 +5,25 @@ from threading import Thread
 from myType import *
 import queue
 
+def mac_convert(str_list):
+    mac_list = []
+    for i in str_list:
+        mac = []
+        for j in range(6):
+            mac.append(eval('0x'+i[2*(5-j):2*(5-j)+2]))
+        mac_list.append(mac)
+    return mac_list
+
+class blePkt:
+    device_record_st = {}
+    def __init__(self, data_list):
+        self.time = time.time()
+        self.address = data_list[23:29]
+        self.channel = data_list[8]
+        self.rssi = 0 - data_list[9]
+        self.payload = data_list[20:]
+
+
 class MyUart:
     def __init__(self, port=None, baudrate=None):
         self.ser = serial.Serial(
@@ -92,15 +111,20 @@ class MyUart:
             return None
         if hasattr(self, 'filter_rssi') and  0-self.filter_rssi < packet[9]:
             return None
-        if hasattr(self, 'filter_mac') and self.filter_mac != packet[23:29]:
+        if hasattr(self, 'filter_mac') and packet[23:29] not in self.filter_mac:
             return None
-        self.ble_packets.put((time.time(),packet))
+        if packet[7] & 0x01 == 0:#CRC ERROR
+            return None
+        self.ble_packets.put(blePkt(packet))
 
     def _read_worker(self):
         self.ser.reset_input_buffer()
         
         while True:
-            self.recv_bytes.extend( self.ser.read(self.ser.in_waiting or 1) )
+            data = self.ser.read(self.ser.in_waiting or 1)
+            if(len(data) > 4000):
+                raise Exception('uart buffer overflow')
+            self.recv_bytes.extend(data)
             while True:
                 packet = self.decodeFromSLIP()
                 if type(packet) == list:
@@ -110,15 +134,19 @@ class MyUart:
                     break
 
 if __name__ == "__main__":
-    uart = MyUart(port='COM10', baudrate= 1_000_000)
-    uart.set_filter(rssi=-80,mac=[0x03,0x58,0x20,0xc6,0x7b,0x90])
+    uart = MyUart(port='/dev/ttyUSB0', baudrate= 1_000_000)
+    uart.set_filter(rssi=-80, mac=[0xc6, 0x05, 0x04, 0x79, 0x27, 0xcd])
     #uart.ser.set_buffer_size(rx_size=100000,tx_size=10000)
     target = 1
     if target == 1:
+        last_time = 0
         while True:
             recv_time,pkt = uart.ble_packets.get()
-
-            hex_list = [f'{x:02x}' for x in pkt]
-            hex_string = ' '.join(hex_list)
-            print(f' recv data{hex_string}, bytes in recv_buff{uart.ser.in_waiting}  time {recv_time}')
-            print()
+            if recv_time - last_time >= 1:
+                last_time = recv_time
+                hex_list = [f'{x:02x}' for x in pkt[23:]]
+                hex_string = ' '.join(hex_list)
+                local_time = time.localtime(recv_time)
+                local_time = time.strftime("%Y-%m-%d %H:%M:%S", local_time)
+                with open('log.txt', 'a') as f:
+                    f.write(f'{local_time}, date {hex_string}\n')
